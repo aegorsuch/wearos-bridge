@@ -337,6 +337,27 @@ public class FakeAdb {
             Console.Error.WriteLine("Unexpected target or arguments");
             return 2;
         }
+        string preset = Path.Combine(Path.GetDirectoryName(typeof(FakeAdb).Assembly.Location), "uploaded-preset.json");
+        if (args.Length == 6 && args[2] == "shell" && args[3] == "pm" &&
+            args[4] == "path" && args[5] == "com.aitech.weartak_civ") {
+            Console.WriteLine("package:/data/app/fixture/base.apk");
+            return 0;
+        }
+        if (args.Length == 6 && args[2] == "shell" && args[3] == "mkdir" && args[4] == "-p") return 0;
+        if (args.Length == 5 && args[2] == "push" && File.Exists(args[3])) {
+            File.Copy(args[3], preset, true);
+            return 0;
+        }
+        if (args.Length == 5 && args[2] == "exec-out" && args[3] == "cat") {
+            byte[] bytes = File.ReadAllBytes(preset);
+            Console.OpenStandardOutput().Write(bytes, 0, bytes.Length);
+            return 0;
+        }
+        if (args.Length == 7 && args[2] == "shell" && args[3] == "mv" && args[4] == "-f" &&
+            args[6] == "/sdcard/Android/data/com.aitech.weartak_civ/files/presets/odin.json") {
+            File.Delete(preset);
+            return 0;
+        }
         if (args[2] == "install" && args.Length == 7 && args[3] == "-r" &&
             args[4] == "-g" && args[5] == "--no-streaming" && File.Exists(args[6])) {
             Console.WriteLine("Success");
@@ -363,6 +384,18 @@ public class FakeAdb {
         $result.exitCode | Should -Be 7
         $result.output | Should -Match 'a "quoted" path C:\\folder with spaces\\'
         $result.output | Should -Match 'diagnostic'
+    }
+
+    It 'uploads through the batch launcher with a spaced preset path and parseable JSON' {
+        $preset = Join-Path $TestDrive 'launcher preset.json'
+        [System.IO.File]::WriteAllText($preset, '{"profile":{"callsign":"ODIN"}}')
+        $output = & $launcher --upload-preset weartak $preset odin --serial fixture-device --adb $fakeAdb --json
+        $LASTEXITCODE | Should -Be 0
+        $result = ($output -join "`n") | ConvertFrom-Json
+        $result.success | Should -BeTrue
+        $result.data.verified | Should -BeTrue
+        $result.data.applied | Should -BeFalse
+        $result.data.applyCommand | Should -Be '#weartakcommandloadprofile name=odin'
     }
 
     It 'fails and terminates a timed-out child command' {

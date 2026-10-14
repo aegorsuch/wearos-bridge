@@ -1413,6 +1413,7 @@ function Show-Help {
     Write-UiLine '--connect IP PORT        Connect to a watch directly'
     Write-UiLine '--install APK            Sideload an APK without the menu'
     Write-UiLine '--bulk-install APK       Install an APK to all authorized devices'
+    Write-UiLine '--upload-preset APP JSON NAME  Upload a WearTAK preset (APP: weartak or tracker)'
     Write-UiLine '--logs [KEYWORD]         Capture a log with an optional filter'
     Write-UiLine '--profile-list           Show available watch profiles'
     Write-UiLine '--profile-use NAME       Switch the active watch profile'
@@ -1430,6 +1431,8 @@ function Show-AutomationHelp {
     Write-UiLine '  --status-json | --screenshot OUTPUT.png'
     Write-UiLine '  --tap X Y | --swipe X1 Y1 X2 Y2 [DURATION_MS] | --key KEYCODE'
     Write-UiLine '  --launch PACKAGE/ACTIVITY | --force-stop PACKAGE'
+    Write-UiLine '  --upload-preset weartak|tracker PRESET.json NAME'
+    Write-UiLine '    Verifies upload only; returns the TAK chat command needed to apply it.'
     Write-UiLine '  --recover-adb (explicitly restarts the shared server; interrupts Studio)'
     Write-UiLine 'Modifiers (after the command; order-independent):'
     Write-UiLine '  --serial SERIAL or --profile NAME: target this call without changing saved settings'
@@ -1441,6 +1444,117 @@ function Show-AutomationHelp {
     Write-UiLine 'Mirror runs in the foreground; automation timeout closes it. Normal --mirror has no timeout.'
     Write-UiLine 'Target modifiers apply only to device operations/status, not bulk install or server recovery.'
     Write-UiLine 'Connect takes IP/PORT and saves them unless --non-interactive or --json is used.'
+}
+
+function Read-WearTakPreset {
+    param([string]$Path, [string]$App)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'Preset file not found.' }
+    $file = Get-Item -LiteralPath $Path
+    if ($file.Length -eq 0 -or $file.Length -gt 65536) { throw 'Preset must be between 1 and 65536 bytes.' }
+    try {
+        $preset = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        # JSON parser diagnostics can contain the preset's credentials.
+        throw 'Preset is not valid JSON.'
+    }
+    if ($preset -isnot [pscustomobject]) { throw 'Preset must be a JSON object.' }
+    foreach ($property in $preset.PSObject.Properties) {
+        if ($property.Name -cnotin @('profile', 'servers')) { throw 'Preset contains an unsupported top-level field.' }
+    }
+    $keys = @('callsign', 'team', 'role')
+    if ($App -eq 'weartak') { $keys += @('height', 'weight', 'birthyear', 'sex', 'usertype', 'pants', 'waist') }
+    $fields = @()
+    if ($preset.PSObject.Properties['profile']) {
+        if ($preset.profile -isnot [pscustomobject]) { throw 'Preset profile must be an object.' }
+        $fields = @($preset.profile.PSObject.Properties)
+        foreach ($field in $fields) {
+            if ($field.Name -cnotin $keys -or $field.Value -isnot [string] -or [string]::IsNullOrWhiteSpace($field.Value)) {
+                throw 'Preset has an unsupported profile field or a non-string/empty value for the selected app.'
+            }
+        }
+    }
+    $servers = @()
+    if ($preset.PSObject.Properties['servers']) {
+        if ($preset.servers -isnot [array]) { throw 'Preset servers must be an array.' }
+        $servers = @($preset.servers)
+        foreach ($server in $servers) {
+            if ($server -isnot [pscustomobject]) { throw 'Each preset server must be an object.' }
+            foreach ($property in $server.PSObject.Properties) {
+                if ($property.Name -cnotin @('name', 'url', 'port', 'username', 'password')) {
+                    throw 'Preset server contains an unsupported field.'
+                }
+            }
+            foreach ($key in @('name', 'url', 'username', 'password')) {
+                if ($server.$key -isnot [string] -or [string]::IsNullOrWhiteSpace($server.$key)) {
+                    throw 'Each preset server needs nonempty name, url, username and password strings.'
+                }
+            }
+            if ($server.url.Trim() -notmatch '^[A-Za-z0-9][A-Za-z0-9.-]{0,252}\z' -or $server.url.Contains('..')) {
+                throw 'Preset server url must be a bare hostname or IPv4 address, without scheme, path or port.'
+            }
+            if ($server.PSObject.Properties['port']) {
+                if (($server.port -isnot [int] -and $server.port -isnot [long]) -or $server.port -lt 1 -or $server.port -gt 65535) {
+                    throw 'Preset server port must be an integer between 1 and 65535; omit it for 8089.'
+                }
+            }
+        }
+    }
+    if ($fields.Count -eq 0 -and $servers.Count -eq 0) { throw 'Preset must contain profile settings or servers.' }
+    return $file.FullName
+}
+
+function Send-WearTakPreset {
+    param([string]$App, [string]$PresetPath, [string]$Name, [string]$Serial)
+
+    if ($App -notin @('weartak', 'tracker')) { throw 'Preset app must be weartak or tracker.' }
+    $App = $App.ToLowerInvariant()
+    if ($Name -cnotmatch '^[a-z0-9][a-z0-9-]{0,31}\z') { throw 'Preset name must be 1-32 lowercase letters, digits or hyphens, starting with a letter or digit.' }
+    $source = Read-WearTakPreset -Path $PresetPath -App $App
+    $expectedHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+    $package = if ($App -eq 'weartak') { 'com.aitech.weartak_civ' } else { 'com.tak.weartak_tracker' }
+    $prefix = if ($App -eq 'weartak') { '#weartakcommand' } else { '#weartaktrackercommand' }
+    $directory = "/sdcard/Android/data/$package/files/presets"
+    $destination = "$directory/$Name.json"
+    $staging = "$directory/.$Name-$([guid]::NewGuid().ToString('N')).upload"
+    $verification = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
+    Ensure-OperationTarget $Serial
+    $adb = Get-AdbExecutable
+    $staged = $false
+    try {
+        $result = Invoke-NativeTool -Executable $adb -Arguments @('-s', $Serial, 'shell', 'pm', 'path', $package)
+        if ($result.exitCode -ne 0 -or $result.output -notmatch '(?m)^package:') { throw 'Selected WearTAK app is not installed or could not be queried.' }
+        $result = Invoke-NativeTool -Executable $adb -Arguments @('-s', $Serial, 'shell', 'mkdir', '-p', $directory)
+        if ($result.exitCode -ne 0) { throw 'Unable to create preset directory. Open the app once and check ADB storage access.' }
+        $staged = $true
+        $result = Invoke-NativeTool -Executable $adb -Arguments @('-s', $Serial, 'push', $source, $staging)
+        if ($result.exitCode -ne 0) { throw "Preset upload failed (exit code $($result.exitCode)); native output withheld to protect credentials." }
+        $result = Invoke-NativeTool -Executable $adb -Arguments @('-s', $Serial, 'exec-out', 'cat', $staging) -OutputPath $verification
+        if ($result.exitCode -ne 0) { throw 'Unable to read back uploaded preset.' }
+        if ((Get-FileHash -LiteralPath $verification -Algorithm SHA256).Hash -ne $expectedHash) {
+            throw 'Preset upload verification failed: file contents differ.'
+        }
+        $result = Invoke-NativeTool -Executable $adb -Arguments @('-s', $Serial, 'shell', 'mv', '-f', $staging, $destination)
+        if ($result.exitCode -ne 0) { throw 'Unable to publish verified preset.' }
+        $staged = $false
+        $command = "${prefix}loadprofile name=$Name"
+        Write-UiLine 'Preset uploaded and verified. Settings have NOT been applied.' -Color Green
+        Write-UiLine 'Enable Commands in the app, allow-list your sender callsign, and send this direct TAK chat message:'
+        Write-UiLine $command -Color Cyan
+        Write-UiLine 'The watch needs a working TAK connection. Check its reply; upload does not verify settings or server authentication.'
+        return [pscustomobject]@{ app = $App; package = $package; name = $Name; remotePath = $destination; uploaded = $true; verified = $true; applied = $false; applyCommand = $command }
+    }
+    finally {
+        if (Test-Path -LiteralPath $verification) { Remove-Item -LiteralPath $verification -Force }
+        if ($staged) {
+            try {
+                $cleanup = Invoke-NativeTool -Executable $adb -Arguments @('-s', $Serial, 'shell', 'rm', '-f', $staging)
+                if ($cleanup.exitCode -ne 0) { Write-UiLine "Could not remove staged preset: $staging" -Color Yellow }
+            }
+            catch { Write-UiLine "Could not remove staged preset: $staging" -Color Yellow }
+        }
+    }
 }
 
 function Invoke-DeviceControl {
@@ -1551,6 +1665,7 @@ function Read-AutomationArguments {
         '--connect' = @(2); '--status-json' = @(0); '--screenshot' = @(1)
         '--tap' = @(2); '--swipe' = @(4, 5); '--key' = @(1)
         '--launch' = @(1); '--force-stop' = @(1); '--recover-adb' = @(0)
+        '--upload-preset' = @(3)
     }
     if (-not $counts.ContainsKey($options.command)) {
         throw "Command '$($options.command)' does not support automation modifiers. See --automation-help."
@@ -1562,6 +1677,10 @@ function Read-AutomationArguments {
         throw "$($options.command) does not accept --serial or --profile."
     }
     if ($options.serial -and $options.serial -match '[\s\x00-\x1f]') { throw 'Invalid device serial.' }
+    if ($options.command -eq '--upload-preset') {
+        if ($options.values[0] -notin @('weartak', 'tracker')) { throw 'Preset app must be weartak or tracker.' }
+        if ($options.values[2] -cnotmatch '^[a-z0-9][a-z0-9-]{0,31}\z') { throw 'Invalid preset name. Use 1-32 lowercase letters, digits or hyphens, starting with a letter or digit.' }
+    }
     if ($options.command -in @('--tap', '--swipe')) {
         foreach ($value in $options.values) {
             $number = 0
@@ -1641,6 +1760,7 @@ function Invoke-AutomationCommand {
                 }
             }
             '--screenshot' { $result.data = Save-WatchScreenshot -OutputPath $values[0] -Serial $result.serial }
+            '--upload-preset' { $result.data = Send-WearTakPreset -App $values[0] -PresetPath $values[1] -Name $values[2] -Serial $result.serial }
             '--recover-adb' { Recover-Adb -Reason 'explicit CLI request' }
             default { $result.data = Invoke-DeviceControl -Command $options.command -Values $values -Serial $result.serial }
         }
@@ -1682,9 +1802,10 @@ function Show-DevMenu {
         Write-Host '  5. Pair + Connect + Mirror'
         Write-Host '  6. Report a Bug'
         Write-Host '  7. Back to main menu'
+        Write-Host '  8. Upload WearTAK / Tracker preset'
         Write-Host '===================================================' -ForegroundColor DarkGreen
 
-        $choice = Read-Host 'Select an option (1-7)'
+        $choice = Read-Host 'Select an option (1-8)'
         switch ($choice) {
             '1' {
                 $profiles = Load-ProfileStore
@@ -1763,6 +1884,15 @@ function Show-DevMenu {
             }
             '7' {
                 return
+            }
+            '8' {
+                $app = Read-Host 'App (weartak or tracker)'
+                $path = Read-Host 'Preset JSON file path (or drag the file here)'
+                $name = Read-Host 'Preset name (example: odin-weartak); replaces a preset with this name'
+                try {
+                    Send-WearTakPreset -App $app -PresetPath $path.Trim('"') -Name $name -Serial (Get-OperationTarget) | Out-Null
+                }
+                catch { Write-UiLine $_.Exception.Message -Color Red }
             }
             default {
             }
@@ -1948,7 +2078,7 @@ function Main {
             Show-AutomationHelp
             return
         }
-        $automationCommands = @('--screenshot', '--tap', '--swipe', '--key', '--launch', '--force-stop', '--recover-adb')
+        $automationCommands = @('--screenshot', '--tap', '--swipe', '--key', '--launch', '--force-stop', '--recover-adb', '--upload-preset')
         $automationModifiers = @('--serial', '--profile', '--adb', '--non-interactive', '--json', '--timeout')
         if ($ScriptArgs[0] -in $automationCommands -or @($ScriptArgs | Where-Object { $_ -in $automationModifiers }).Count -gt 0) {
             Invoke-AutomationCommand $ScriptArgs

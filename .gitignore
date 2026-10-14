@@ -6,3 +6,4 @@ watch_logs/
 diagnostic_bundles/
 _tmp_scrcpy_test/
 testResults.xml
+presets/

@@ -196,6 +196,7 @@ wearos-windows-bridge.bat --swipe 180 280 180 80 300 --profile DEV --json
 wearos-windows-bridge.bat --key KEYCODE_HOME --profile DEV --json
 wearos-windows-bridge.bat --launch com.example.watch/.MainActivity --profile DEV --json
 wearos-windows-bridge.bat --force-stop com.example.watch --profile DEV --json
+wearos-windows-bridge.bat --upload-preset weartak "C:\WatchPresets\odin.json" odin-weartak --profile DEV --json
 ```
 
 ### Commands and modifiers
@@ -213,6 +214,7 @@ wearos-windows-bridge.bat --force-stop com.example.watch --profile DEV --json
 | `--key` | Numeric keycode or `KEYCODE_NAME` | Send an Android key event |
 | `--launch` | `PACKAGE/ACTIVITY` | Start an explicit activity and wait for the launch result |
 | `--force-stop` | Package name | Force-stop an app |
+| `--upload-preset` | `weartak` or `tracker`, JSON path, preset name | Upload and read-back verify a local preset; return the direct TAK chat command to apply it |
 | `--recover-adb` | None | Explicitly restart the shared ADB server; interrupts Studio and other ADB clients |
 
 Place modifiers after the command, in any order:
@@ -240,6 +242,64 @@ wearos-windows-bridge.bat --install "C:\project\app-debug.apk" --profile DEV --a
 
 For a persistent selection, set the Windows user environment variable `WEAROS_BRIDGE_ADB` to the full SDK ADB path and restart Studio/the bridge to pick it up. Selection order is `--adb`, `WEAROS_BRIDGE_ADB`, configured scrcpy folder, then PATH. An invalid explicit selection fails rather than silently falling back. scrcpy receives this same executable through its `ADB` environment variable.
 
+### WearTAK / WearTAK Tracker presets
+
+Use **7. Developer Tools > 8. Upload WearTAK / Tracker preset**, or:
+
+```text
+wearos-windows-bridge.bat --upload-preset weartak "C:\WatchPresets\odin.json" odin-weartak --profile DEV --json
+wearos-windows-bridge.bat --upload-preset tracker "C:\WatchPresets\odin-tracker.json" odin-tracker --serial WATCH_SERIAL --json
+```
+
+The selected app must be installed. Open it once if its external storage is not initialized. Preset names are 1-32 lowercase letters, digits or hyphens, starting with a letter or digit. The bridge stages the file, reads it back and compares SHA-256 hashes, then replaces any existing preset of that name. Failed uploads do not replace the existing preset; the bridge attempts to remove the staged file and reports cleanup failures. App settings are never changed by uploading.
+
+Files go under `/sdcard/Android/data/com.aitech.weartak_civ/files/presets/` for WearTAK or `/sdcard/Android/data/com.tak.weartak_tracker/files/presets/` for Tracker. Android device paths use forward slashes; Windows input paths use backslashes.
+
+A WearTAK preset can contain:
+
+```json
+{
+  "profile": {
+    "callsign": "ODIN-WEARTAK",
+    "team": "Dark Green",
+    "role": "K9",
+    "height": "5'8\"",
+    "weight": "150",
+    "pants": "30",
+    "waist": "30",
+    "birthyear": "1988",
+    "sex": "Male",
+    "usertype": "Coalition Civilian"
+  },
+  "servers": [
+    {
+      "name": "Example TAK",
+      "url": "tak.example.org",
+      "port": 8089,
+      "username": "YOUR_USERNAME",
+      "password": "YOUR_PASSWORD"
+    }
+  ]
+}
+```
+
+Tracker supports only `callsign`, `team` and `role` in `profile`; use a separate preset without the physiological fields. Either app accepts profile-only or servers-only presets. Profile values must be nonempty strings. Weight is in pounds; height is feet and inches; pants is pants length. Server URLs are bare hostnames or IPv4 addresses, not URLs with schemes or paths; omit `port` for the apps' default of 8089.
+
+The bridge checks JSON structure, supported field names, server fields/ports and the 64 KiB size limit before uploading. The app remains responsible for validating actual profile values against its settings choices and ranges, and enforcing managed/locked settings. Upload verification does not mean those values will be accepted.
+
+**To apply:** enable **Tool Preferences > Plugins > Commands** in the app, allow-list the sender's callsign, and send the returned command as a **direct TAK chat message** from that sender:
+
+```text
+#weartakcommandloadprofile name=odin-weartak
+#weartaktrackercommandloadprofile name=odin-tracker
+```
+
+The watch needs an existing working TAK connection to receive the message. The bridge does not send chat or trigger application over ADB. Check the watch's chat reply for the application outcome; existing server connections are skipped, not updated. Neither the upload result nor the reply verifies successful server authentication. Callsign allow-lists do not authenticate a sender; use this feature only on trusted TAK networks.
+
+With `--json`, `data` includes `app`, `package`, `name`, `remotePath`, `uploaded`, `verified`, `applied` (always `false`) and `applyCommand`. `success: true` means only that the preset file was uploaded and verified.
+
+Presets contain **plaintext credentials**. Keep real files outside repositories and shared folders; protect both the PC and watch copies. A local `presets/` folder beside the bridge is Git-ignored as a convenience, not encrypted storage. File contents and credentials are not printed by this command; raw native upload diagnostics and JSON parser errors are withheld to prevent accidental disclosure. A temporary local read-back copy is deleted after verification.
+
 ### Result contract for scripts and agents
 
 Exit code **0** means the operation succeeded; **1** means invalid arguments, timeout, or operation failure. An install requires both a zero ADB exit code and an explicit `Success` result. Bulk installations continue through all targets, then fail overall if any target failed.
@@ -258,7 +318,7 @@ With `--json`, the stable version-1 envelope is:
 }
 ```
 
-On failure, `success` is `false` and `error` contains the reason. `serial` is null for untargeted operations or failures before target resolution. `data` is null for install/connect/mirror/recovery, contains `path` for screenshots, and contains native command `output` for screen/app controls. Messages contain human-readable progress and native diagnostics rather than extra stdout text.
+On failure, `success` is `false` and `error` contains the reason. `serial` is null for untargeted operations or failures before target resolution. `data` is null for install/connect/mirror/recovery, contains `path` for screenshots, contains native command `output` for screen/app controls, and contains upload metadata plus `applyCommand` for presets. Messages contain human-readable progress and native diagnostics rather than extra stdout text.
 
 `--status-json` without `--json` retains its original bare status object. With `--json`, that object is under `data`. `watchConnected` describes the exact saved active endpoint in the authorized `device` state. When `--serial` or `--profile` is supplied, status also includes `selectedSerial` and `selectedConnected` for that per-call target; the saved active profile remains unchanged. A successful status query does not imply the watch is connected: inspect those fields.
 
