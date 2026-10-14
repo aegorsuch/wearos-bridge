@@ -390,7 +390,7 @@ public class FakeAdb {
         $preset = Join-Path $TestDrive 'launcher preset.json'
         [System.IO.File]::WriteAllText($preset, '{"profile":{"callsign":"ODIN"}}')
         $output = & $launcher --upload-preset weartak $preset odin --serial fixture-device --adb $fakeAdb --json
-        $LASTEXITCODE | Should -Be 0
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
         $result = ($output -join "`n") | ConvertFrom-Json
         $result.success | Should -BeTrue
         $result.data.verified | Should -BeTrue

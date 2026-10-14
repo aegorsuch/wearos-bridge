@@ -1505,6 +1505,21 @@ function Read-WearTakPreset {
     return $file.FullName
 }
 
+function Get-PresetFileHash {
+    param([string]$Path)
+
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        return [BitConverter]::ToString($algorithm.ComputeHash($stream))
+    }
+    finally {
+        if ($stream) { $stream.Dispose() }
+        $algorithm.Dispose()
+    }
+}
+
 function Send-WearTakPreset {
     param([string]$App, [string]$PresetPath, [string]$Name, [string]$Serial)
 
@@ -1512,7 +1527,7 @@ function Send-WearTakPreset {
     $App = $App.ToLowerInvariant()
     if ($Name -cnotmatch '^[a-z0-9][a-z0-9-]{0,31}\z') { throw 'Preset name must be 1-32 lowercase letters, digits or hyphens, starting with a letter or digit.' }
     $source = Read-WearTakPreset -Path $PresetPath -App $App
-    $expectedHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+    $expectedHash = Get-PresetFileHash -Path $source
     $package = if ($App -eq 'weartak') { 'com.aitech.weartak_civ' } else { 'com.tak.weartak_tracker' }
     $prefix = if ($App -eq 'weartak') { '#weartakcommand' } else { '#weartaktrackercommand' }
     $directory = "/sdcard/Android/data/$package/files/presets"
@@ -1532,7 +1547,7 @@ function Send-WearTakPreset {
         if ($result.exitCode -ne 0) { throw "Preset upload failed (exit code $($result.exitCode)); native output withheld to protect credentials." }
         $result = Invoke-NativeTool -Executable $adb -Arguments @('-s', $Serial, 'exec-out', 'cat', $staging) -OutputPath $verification
         if ($result.exitCode -ne 0) { throw 'Unable to read back uploaded preset.' }
-        if ((Get-FileHash -LiteralPath $verification -Algorithm SHA256).Hash -ne $expectedHash) {
+        if ((Get-PresetFileHash -Path $verification) -ne $expectedHash) {
             throw 'Preset upload verification failed: file contents differ.'
         }
         $result = Invoke-NativeTool -Executable $adb -Arguments @('-s', $Serial, 'shell', 'mv', '-f', $staging, $destination)

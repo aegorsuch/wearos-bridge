@@ -81,6 +81,13 @@ Describe 'WearTAK preset uploads' {
         Read-WearTakPreset -Path $presetPath -App tracker | Should -Be $presetPath
     }
 
+    It 'computes SHA-256 from raw bytes without module discovery and releases the file' {
+        [System.IO.File]::WriteAllText($presetPath, 'abc')
+        Get-PresetFileHash -Path $presetPath | Should -Be 'BA-78-16-BF-8F-01-CF-EA-41-41-40-DE-5D-AE-22-23-B0-03-61-A3-96-17-7A-9C-B4-10-FF-61-F2-00-15-AD'
+        Remove-Item -LiteralPath $presetPath
+        Test-Path -LiteralPath $presetPath | Should -BeFalse
+    }
+
     It 'enforces the exact byte limit' {
         $base = '{"profile":{"callsign":"ODIN"}}'
         [System.IO.File]::WriteAllText($presetPath, $base.PadRight(65536))
