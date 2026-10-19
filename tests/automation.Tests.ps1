@@ -1,5 +1,5 @@
 BeforeAll {
-    . (Join-Path $PSScriptRoot '..\wearos-windows-bridge.ps1')
+    . (Join-Path (Join-Path $PSScriptRoot '..') 'wearos-bridge.ps1')
 }
 
 Describe 'Automation argument validation' {
@@ -318,11 +318,11 @@ Describe 'Screenshot output' {
     }
 }
 
-Describe 'Native runner and process-level CLI' {
+Describe 'Native runner and process-level CLI' -Skip:($env:OS -ne 'Windows_NT') {
     BeforeAll {
         $shell = (Get-Command powershell.exe).Source
-        $bridge = Join-Path $PSScriptRoot '..\wearos-windows-bridge.ps1'
-        $launcher = Join-Path $PSScriptRoot '..\wearos-windows-bridge.bat'
+        $bridge = Join-Path (Join-Path $PSScriptRoot '..') 'wearos-bridge.ps1'
+        $launcher = Join-Path (Join-Path $PSScriptRoot '..') 'wearos-bridge.bat'
         $fakeAdb = Join-Path $TestDrive 'fake adb.exe'
         $source = @'
 using System;

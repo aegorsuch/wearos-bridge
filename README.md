@@ -1,6 +1,6 @@
-# Wear OS Windows Bridge
+# WearOS Bridge
 
-A Windows command-line helper for pairing a Wear OS watch over Wi-Fi, connecting with Android Debug Bridge (ADB), mirroring the watch with scrcpy, and sideloading APK files.
+A cross-platform (Windows, macOS, Ubuntu/Linux) command-line helper for pairing a Wear OS watch over Wi-Fi, connecting with Android Debug Bridge (ADB), mirroring the watch with scrcpy, and sideloading APK files.
 
 Repository: https://git.tak.gov/aegorsuch/wearos-windows-bridge
 
@@ -20,42 +20,75 @@ TAK Forge is the canonical repository. GitHub is a secondary repository.
 
 ### Report a Bug
 
-If the helper fails, crashes, or behaves unexpectedly, open a GitHub issue at https://github.com/aegorsuch/wearos-windows-bridge/issues and include the stage of the flow that failed, the exact error text, and the watch model or device state when possible. The tool's menu also includes a bug-report option to open a prefilled issue form.
+If the helper fails, crashes, or behaves unexpectedly, open a GitHub issue at https://github.com/aegorsuch/wearos-bridge/issues and include your operating system, the stage of the flow that failed, the exact error text, and the watch model or device state when possible. The tool's menu also includes a bug-report option to open a prefilled issue form.
 
 ## Quick Start
 
-1. Download and extract the [latest release ZIP](https://github.com/aegorsuch/wearos-windows-bridge/releases/latest/download/wearos-windows-bridge.zip). It contains the `.bat` launcher, PowerShell script, and README. Keep the extracted files together.
-2. Double-click `wearos-windows-bridge.bat`. Run the `.bat` file, not the `.ps1` file. The correct result is a black window showing **WEAROS WINDOWS BRIDGE** and a numbered menu.
-3. If the `.bat` file opens as text, right-click it, choose **Open with**, and select **Windows Command Processor**. Also confirm the filename ends in `.bat`, not `.bat.txt`.
-4. In the menu, select **1. Setup scrcpy System Path** before selecting any watch action.
+Download the archive for your platform from the [latest release](https://github.com/aegorsuch/wearos-bridge/releases/latest):
 
-Do not paste the scrcpy download link into the path prompt. Download and extract scrcpy first, then provide the folder that contains both `scrcpy.exe` and `adb.exe`. scrcpy can be stored anywhere; it does not have to be beside the `.bat` and `.ps1` files. The helper remembers the folder you select. If you move or rename it later, select **1. Setup scrcpy System Path** again and choose its new location.
+| Platform | Download | Launch |
+|----------|----------|--------|
+| Windows 10+ | `wearos-bridge-windows.zip` | Double-click `wearos-bridge.bat` |
+| macOS | `wearos-bridge-macos.tar.gz` | `./wearos-bridge.sh` in Terminal |
+| Ubuntu / Linux | `wearos-bridge-linux.tar.gz` | `./wearos-bridge.sh` in a terminal |
 
-Each commit pushed to the `develop` branch on GitHub automatically publishes an updated ZIP release.
+**Windows**
+
+1. Extract the ZIP and keep the files together. Run the `.bat` file, not the `.ps1` file. The correct result is a black window showing **WEAROS BRIDGE** and a numbered menu.
+2. If the `.bat` file opens as text, right-click it, choose **Open with**, and select **Windows Command Processor**. Also confirm the filename ends in `.bat`, not `.bat.txt`.
+3. In the menu, select **1. Setup scrcpy System Path** before selecting any watch action.
+
+Do not paste the scrcpy download link into the path prompt. Download and extract scrcpy first, then provide the folder that contains both `scrcpy.exe` and `adb.exe`. scrcpy can be stored anywhere. The helper remembers the folder you select. If you move or rename it later, select **1. Setup scrcpy System Path** again and choose its new location.
+
+**macOS**
+
+```sh
+brew install --cask powershell      # PowerShell 7 (pwsh)
+brew install scrcpy android-platform-tools
+tar -xzf wearos-bridge-macos.tar.gz && cd wearos-bridge-macos
+./wearos-bridge.sh
+```
+
+If macOS blocks the downloaded script or `pwsh` (Gatekeeper), clear the quarantine flag with `xattr -dr com.apple.quarantine wearos-bridge-macos` after confirming the download source.
+
+**Ubuntu / Linux**
+
+```sh
+sudo snap install powershell --classic   # PowerShell 7 (pwsh); see Microsoft's docs for apt-based install
+sudo apt install scrcpy adb
+tar -xzf wearos-bridge-linux.tar.gz && cd wearos-bridge-linux
+./wearos-bridge.sh
+```
+
+On macOS/Linux, scrcpy and adb are detected automatically from `PATH`, `ANDROID_HOME`/`ANDROID_SDK_ROOT`, Homebrew, snap, and common Android SDK locations, so menu option 1 is only needed for a scrcpy folder that is not installed through a package manager. If the script is not executable, run `chmod +x wearos-bridge.sh`. You may also run `pwsh ./wearos-bridge.ps1` directly.
+
+Each commit pushed to the `develop` branch automatically runs the tests on Windows, Ubuntu, and macOS runners and then publishes a release with all three archives. CI uses fixture ADB only; macOS and Linux have not been verified against a physical watch.
 
 ## Requirements
 
-- Windows 10 or later
-- A Wear OS watch and Windows PC on the same network
-- A scrcpy release containing both `scrcpy.exe` and `adb.exe`
-- Wireless debugging enabled on the watch
-- PowerShell, available by default on supported Windows versions
+- A Wear OS watch and the computer on the same network, with Wireless Debugging enabled on the watch
+- scrcpy and ADB: a scrcpy release containing both `scrcpy.exe` and `adb.exe` on Windows; `scrcpy` and `adb` from your package manager (or SDK platform-tools) on macOS/Linux
+- Windows 10 or later: Windows PowerShell 5.1, included with Windows
+- macOS or Ubuntu/Linux: PowerShell 7+ (`pwsh`)
+- On Linux, a desktop session for scrcpy's window, and `xdg-open` for the bug-report link (optional; the link is printed if it cannot open)
 
 ## Getting Started
 
-A `.bat` file is a small script that Windows runs like a program. To use this helper:
+A `.bat` file is a small script that Windows runs like a program. To use this helper on Windows:
 
-1. Double-click `wearos-windows-bridge.bat` (or right-click it and choose **Open**) to launch it. A console window will open with a numbered menu.
+1. Double-click `wearos-bridge.bat` (or right-click it and choose **Open**) to launch it. A console window will open with a numbered menu.
 2. If Windows shows a **Windows protected your PC** SmartScreen warning, click **More info**, then **Run anyway**. This warning is common for downloaded batch files; before running it, confirm you downloaded it from the expected repository or a trusted source.
 3. Type the number of the menu option you want and press Enter. Follow the on-screen prompts. Close the console window to quit.
-4. To type a folder or file path when asked, you can drag the file/folder from File Explorer directly into the console window instead of typing it out.
+4. To type a folder or file path when asked, you can drag the file/folder from File Explorer (Windows) or your file manager (macOS/Linux, in most terminals) directly into the console window instead of typing it out.
 5. Press `Ctrl+C` to cancel a running command (such as Live Watch Logs).
+
+On macOS/Linux run `./wearos-bridge.sh` instead; everything after launch works the same.
 
 ## First Run
 
-1. Click the [scrcpy releases link](https://github.com/Genymobile/scrcpy/releases), download the latest `scrcpy-win64` zip, and extract it. scrcpy mirrors your watch screen and includes `adb.exe`, which the helper uses to connect to the watch and install APKs.
-2. Run `wearos-windows-bridge.bat` and select **1. Setup scrcpy System Path**.
-3. Drag the extracted folder containing `scrcpy.exe` and `adb.exe` into the window, or enter its path. The helper remembers this folder for future launches but does not change your permanent Windows PATH.
+1. Windows: click the [scrcpy releases link](https://github.com/Genymobile/scrcpy/releases), download the latest `scrcpy-win64` zip, and extract it. scrcpy mirrors your watch screen and includes `adb.exe`, which the helper uses to connect to the watch and install APKs. macOS/Linux: install scrcpy and adb as shown in Quick Start.
+2. Run the launcher and, on Windows, select **1. Setup scrcpy System Path**.
+3. Drag the extracted folder containing `scrcpy.exe` and `adb.exe` into the window, or enter its path. The helper remembers this folder for future launches but does not change your permanent PATH.
 4. If you move or rename the scrcpy folder later, run setup again and choose its new location.
 
 ## Enable Developer Options and Wireless Debugging
@@ -74,7 +107,7 @@ Before pairing, enable the required settings on the watch:
 
 On the watch:
 
-Before pairing, make sure the watch and the Windows PC are connected to the same Wi-Fi network. They must be able to reach each other over that network.
+Before pairing, make sure the watch and the computer are connected to the same Wi-Fi network. They must be able to reach each other over that network.
 
 The **IP address** identifies the watch on the network, for example `192.168.1.33`. Enter the IP address by itself; do not append the port. The **pairing port** is a separate number, such as `41131`, shown on the watch's pairing screen. Enter both values exactly, and do not use the connection port for pairing.
 
@@ -85,7 +118,7 @@ The **IP address** identifies the watch on the network, for example `192.168.1.3
 
 In the helper, select **2. Pair Watch via Wi-Fi** and enter those values when prompted. Pairing saves the watch IP and pairing port for the active profile; it does not mean the watch is currently connected.
 
-Pairing and connection use different ports. The pairing port is shown after selecting **Pair new device**. The connection port is shown on the main **Wireless Debugging** screen.
+Pairing and connection use different ports. The pairing port is shown after selecting **Pair new device**. The connection port is shown on the main **Wireless Debugging** screen. The IP address is usually the same on both screens, but for step 2 always use the IP and pairing port from the **Pair new device** screen, not the connection IP:port on the main screen. The helper repeats this reminder at the pairing prompts.
 
 ## Connect to the Watch
 
@@ -121,13 +154,13 @@ For example: `10.0.0.169_34419_watch_log_takserver.aftakcoe.org_20260923-211500_
 
 When no keyword is supplied, the filename uses `none`.
 
-The log is written directly to `watch_logs\` as it streams, using a temporary `..._inprogress.txt` name that is renamed to include the end time once capture stops. This means a capture is never stranded elsewhere if the window is closed or the batch job is terminated mid-stream.
+The log is written directly to the `watch_logs` folder as it streams, using a temporary `..._inprogress.txt` name that is renamed to include the end time once capture stops. This means a capture is never stranded elsewhere if the window is closed or the batch job is terminated mid-stream.
 
-The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Open `watch_logs` beside the bridge files in File Explorer to review captures. Share a log only after checking it for sensitive information.
+The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Review captures there (see Local Files for its location). Share a log only after checking it for sensitive information.
 
 ## Local Files
 
-The helper creates these local files beside the batch file:
+On Windows the helper creates these local files beside the batch file. On macOS and Linux they are stored in a per-user directory instead (`~/Library/Application Support/wearos-bridge` on macOS, `$XDG_CONFIG_HOME/wearos-bridge` or `~/.config/wearos-bridge` on Linux), created readable only by you. Set `WEAROS_BRIDGE_HOME` on any platform to choose a different folder.
 
 - `ip_cache.txt` - saved watch IP and ports; ignored by Git
 - `path_configured.txt` - local marker indicating PATH setup was completed; ignored by Git
@@ -179,24 +212,25 @@ Menu and CLI operations reuse healthy connections. Failed connection or pairing 
 
 ### One-click pair + connect + mirror
 
-Use **7. Developer Tools > 5. Pair + Connect + Mirror** for the guided flow, or run `wearos-windows-bridge.bat --pair-connect-mirror` for the command-line flow. The command prompts for any values not supplied as arguments.
+Use **7. Developer Tools > 5. Pair + Connect + Mirror** for the guided flow, or run `wearos-bridge.bat --pair-connect-mirror` (`./wearos-bridge.sh --pair-connect-mirror` on macOS/Linux) for the command-line flow. The command prompts for any values not supplied as arguments.
 
 ## Android Studio / Automation
 
 Use the normal menu for manual setup, pairing, and troubleshooting. Scripts and agents should invoke direct commands, not navigate a special menu. Both interfaces use the same installation, connection, and mirroring functions.
 
-Run `wearos-windows-bridge.bat --automation-help` to discover the automation interface. These examples assume the launcher is on PATH; otherwise use its full quoted path.
+Run `wearos-bridge.bat --automation-help` (or `./wearos-bridge.sh --automation-help` on macOS/Linux) to discover the automation interface. The examples use the Windows launcher and Windows paths; on macOS/Linux substitute `./wearos-bridge.sh` and POSIX paths. They assume the launcher is on PATH; otherwise use its full quoted path.
 
 ```text
-wearos-windows-bridge.bat --install "C:\project\app\build\outputs\apk\debug\app-debug.apk" --profile DEV --non-interactive --json
-wearos-windows-bridge.bat --status-json --serial 192.168.1.33:5555 --json
-wearos-windows-bridge.bat --screenshot "C:\project\watch.png" --profile DEV --json
-wearos-windows-bridge.bat --tap 180 180 --profile DEV --json
-wearos-windows-bridge.bat --swipe 180 280 180 80 300 --profile DEV --json
-wearos-windows-bridge.bat --key KEYCODE_HOME --profile DEV --json
-wearos-windows-bridge.bat --launch com.example.watch/.MainActivity --profile DEV --json
-wearos-windows-bridge.bat --force-stop com.example.watch --profile DEV --json
-wearos-windows-bridge.bat --upload-preset weartak "C:\WatchPresets\odin.json" odin-weartak --profile DEV --json
+wearos-bridge.bat --install "C:\project\app\build\outputs\apk\debug\app-debug.apk" --profile DEV --non-interactive --json
+wearos-bridge.bat --status-json --serial 192.168.1.33:5555 --json
+wearos-bridge.bat --screenshot "C:\project\watch.png" --profile DEV --json
+wearos-bridge.bat --tap 180 180 --profile DEV --json
+wearos-bridge.bat --swipe 180 280 180 80 300 --profile DEV --json
+wearos-bridge.bat --key KEYCODE_HOME --profile DEV --json
+wearos-bridge.bat --launch com.example.watch/.MainActivity --profile DEV --json
+wearos-bridge.bat --force-stop com.example.watch --profile DEV --json
+wearos-bridge.bat --upload-preset weartak "C:\WatchPresets\odin.json" odin-weartak --profile DEV --json
+./wearos-bridge.sh --install ~/project/app/build/outputs/apk/debug/app-debug.apk --profile DEV --non-interactive --json
 ```
 
 ### Commands and modifiers
@@ -237,7 +271,7 @@ Relative input/output paths are resolved from the caller's working directory. Co
 Select the same SDK ADB used by Studio to avoid competing bundled ADB versions:
 
 ```text
-wearos-windows-bridge.bat --install "C:\project\app-debug.apk" --profile DEV --adb "C:\Users\YOUR_USER\AppData\Local\Android\Sdk\platform-tools\adb.exe" --json
+wearos-bridge.bat --install "C:\project\app-debug.apk" --profile DEV --adb "C:\Users\YOUR_USER\AppData\Local\Android\Sdk\platform-tools\adb.exe" --json
 ```
 
 For a persistent selection, set the Windows user environment variable `WEAROS_BRIDGE_ADB` to the full SDK ADB path and restart Studio/the bridge to pick it up. Selection order is `--adb`, `WEAROS_BRIDGE_ADB`, configured scrcpy folder, then PATH. An invalid explicit selection fails rather than silently falling back. scrcpy receives this same executable through its `ADB` environment variable.
@@ -247,8 +281,8 @@ For a persistent selection, set the Windows user environment variable `WEAROS_BR
 Use **7. Developer Tools > 8. Upload WearTAK / Tracker preset**, or:
 
 ```text
-wearos-windows-bridge.bat --upload-preset weartak "C:\WatchPresets\odin.json" odin-weartak --profile DEV --json
-wearos-windows-bridge.bat --upload-preset tracker "C:\WatchPresets\odin-tracker.json" odin-tracker --serial WATCH_SERIAL --json
+wearos-bridge.bat --upload-preset weartak "C:\WatchPresets\odin.json" odin-weartak --profile DEV --json
+wearos-bridge.bat --upload-preset tracker "C:\WatchPresets\odin-tracker.json" odin-tracker --serial WATCH_SERIAL --json
 ```
 
 The selected app must be installed. Open it once if its external storage is not initialized. Preset names are 1-32 lowercase letters, digits or hyphens, starting with a letter or digit. The bridge stages the file, reads it back and compares SHA-256 hashes, then replaces any existing preset of that name. Failed uploads do not replace the existing preset; the bridge attempts to remove the staged file and reports cleanup failures. App settings are never changed by uploading.
@@ -329,7 +363,7 @@ Agents should discover commands using `--automation-help`, use `--json` and an e
 In **Settings > Tools > External Tools**, add an install tool:
 
 - **Program:** `C:\Windows\System32\cmd.exe`
-- **Arguments:** `/d /c ""C:\tools\wearos-windows-bridge\wearos-windows-bridge.bat" --install "$ProjectFileDir$\app\build\outputs\apk\debug\app-debug.apk" --profile DEV --non-interactive --json"`
+- **Arguments:** `/d /c ""C:\tools\wearos-bridge\wearos-bridge.bat" --install "$ProjectFileDir$\app\build\outputs\apk\debug\app-debug.apk" --profile DEV --non-interactive --json"`
 - **Working directory:** `$ProjectFileDir$`
 
 Adjust the launcher path, module name, build variant, and profile for your project. Build the APK first; an External Tool invocation alone does not build it.
@@ -337,7 +371,7 @@ Adjust the launcher path, module name, build variant, and profile for your proje
 For a screenshot tool, use the same program/working directory and these arguments:
 
 ```text
-/d /c ""C:\tools\wearos-windows-bridge\wearos-windows-bridge.bat" --screenshot "$ProjectFileDir$\watch.png" --profile DEV --json"
+/d /c ""C:\tools\wearos-bridge\wearos-bridge.bat" --screenshot "$ProjectFileDir$\watch.png" --profile DEV --json"
 ```
 
 ## Troubleshooting
@@ -360,7 +394,7 @@ If ADB reports the watch as `unauthorized`, confirm the **Allow debugging?** pro
 
 ### "adb server is out of date" or devices behave inconsistently
 
-Different bundled ADB versions can conflict on the same server port. Configure `WEAROS_BRIDGE_ADB` or `--adb` to use Studio's SDK executable, so the bridge and scrcpy use the same version. If pairing fails with a protocol-fault error, reopen **Pair new device** on the watch for a fresh code and port and retry. Only if the shared server really needs restarting, invoke `wearos-windows-bridge.bat --recover-adb`, understanding that this interrupts Studio's debugger, Logcat, and other ADB clients.
+Different bundled ADB versions can conflict on the same server port. Configure `WEAROS_BRIDGE_ADB` or `--adb` to use Studio's SDK executable, so the bridge and scrcpy use the same version. If pairing fails with a protocol-fault error, reopen **Pair new device** on the watch for a fresh code and port and retry. Only if the shared server really needs restarting, invoke `wearos-bridge.bat --recover-adb` (or `./wearos-bridge.sh --recover-adb`), understanding that this interrupts Studio's debugger, Logcat, and other ADB clients.
 
 ### Text entry through scrcpy does not save
 

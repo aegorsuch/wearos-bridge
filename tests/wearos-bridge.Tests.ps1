@@ -1,8 +1,14 @@
 BeforeAll {
-    . (Join-Path $PSScriptRoot '..\wearos-windows-bridge.ps1')
+    . (Join-Path (Join-Path $PSScriptRoot '..') 'wearos-bridge.ps1')
 }
 
 Describe 'Get-PairInputError' {
+    It 'tells users to use the pairing screen IP and port, not the connection endpoint' {
+        $note = (Get-PairingScreenNote) -join ' '
+        $note | Should -Match 'Pair new device'
+        $note | Should -Match 'connection port'
+        $note | Should -Match 'differs from the pairing port'
+    }
     It 'accepts valid pairing values' {
         Get-PairInputError -Ip '192.168.1.33' -PairPort '41131' -PairCode '952775' | Should -BeNullOrEmpty
     }
@@ -24,8 +30,8 @@ Describe 'Set-ScrcpyPathFromFolder' {
     It 'accepts a quoted folder path with scrcpy and adb' {
         $folder = Join-Path $TestDrive 'scrcpy package'
         New-Item -Path $folder -ItemType Directory -Force | Out-Null
-        New-Item -Path (Join-Path $folder 'scrcpy.exe') -ItemType File | Out-Null
-        New-Item -Path (Join-Path $folder 'adb.exe') -ItemType File | Out-Null
+        New-Item -Path (Join-Path $folder $script:ScrcpyName) -ItemType File | Out-Null
+        New-Item -Path (Join-Path $folder $script:AdbName) -ItemType File | Out-Null
         Mock Ensure-PathConfiguredMarker {}
 
         $originalPath = $env:PATH
@@ -53,7 +59,7 @@ Describe 'Set-ScrcpyPathFromFolder' {
         $folder = Join-Path $TestDrive 'incomplete scrcpy package'
         New-Item -Path $folder -ItemType Directory -Force | Out-Null
 
-        { Set-ScrcpyPathFromFolder -Folder $folder } | Should -Throw '*does not contain both scrcpy.exe and adb.exe*'
+        { Set-ScrcpyPathFromFolder -Folder $folder } | Should -Throw "*does not contain both $($script:ScrcpyName) and $($script:AdbName)*"
     }
 }
 

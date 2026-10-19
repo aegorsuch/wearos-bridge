@@ -1,5 +1,5 @@
 BeforeAll {
-    . (Join-Path $PSScriptRoot '..\wearos-windows-bridge.ps1')
+    . (Join-Path (Join-Path $PSScriptRoot '..') 'wearos-bridge.ps1')
 }
 
 Describe 'WearTAK preset uploads' {
