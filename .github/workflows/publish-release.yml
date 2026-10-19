@@ -21,11 +21,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-    env:
-      WEAROS_BRIDGE_HOME: ${{ runner.temp }}/wearos-bridge-state
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Isolate bridge state
+        shell: pwsh
+        run: '"WEAROS_BRIDGE_HOME=$env:RUNNER_TEMP/wearos-bridge-state" | Out-File -FilePath $env:GITHUB_ENV -Append'
 
       - name: Validate PowerShell syntax
         shell: pwsh
