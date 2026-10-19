@@ -86,11 +86,13 @@ Describe 'Tool discovery' {
         $adb = Join-Path (Join-Path $sdk 'platform-tools') 'adb'
         Set-Content -Path $adb -Value 'x'
         $savedHome = $env:ANDROID_HOME
+        $savedPath = $env:PATH
         try {
+            $env:PATH = Join-Path $script:toolDir 'empty'
             $env:ANDROID_HOME = $sdk
             Find-ToolExecutable -Name 'adb' | Should -Be $adb
         }
-        finally { $env:ANDROID_HOME = $savedHome }
+        finally { $env:ANDROID_HOME = $savedHome; $env:PATH = $savedPath }
     }
 }
 
