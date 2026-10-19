@@ -1,11 +1,42 @@
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$IpCachePath = Join-Path $ScriptDir 'ip_cache.txt'
-$ProfilesPath = Join-Path $ScriptDir 'watch_profiles.json'
-$ActiveProfilePath = Join-Path $ScriptDir 'active_profile.txt'
-$PathConfiguredPath = Join-Path $ScriptDir 'path_configured.txt'
-$LogsDir = Join-Path $ScriptDir 'watch_logs'
+
+# $IsWindows/$IsMacOS only exist in PowerShell 7+; Windows PowerShell 5.1 is always Windows.
+$script:IsWindowsHost = ($PSVersionTable.PSEdition -eq 'Desktop') -or [bool](Get-Variable -Name IsWindows -ValueOnly -ErrorAction SilentlyContinue)
+$script:IsMacHost = [bool](Get-Variable -Name IsMacOS -ValueOnly -ErrorAction SilentlyContinue)
+$script:AdbName = if ($script:IsWindowsHost) { 'adb.exe' } else { 'adb' }
+$script:ScrcpyName = if ($script:IsWindowsHost) { 'scrcpy.exe' } else { 'scrcpy' }
+
+function Get-HomeDirectory {
+    if ($script:IsWindowsHost -and -not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { return $env:USERPROFILE }
+    if (-not [string]::IsNullOrWhiteSpace($env:HOME)) { return $env:HOME }
+    return [Environment]::GetFolderPath('UserProfile')
+}
+
+# Windows keeps settings beside the script (unchanged); macOS/Linux use a per-user directory
+# because the extracted release folder may be read-only. WEAROS_BRIDGE_HOME overrides both.
+function Get-StateDirectory {
+    if (-not [string]::IsNullOrWhiteSpace($env:WEAROS_BRIDGE_HOME)) { return $env:WEAROS_BRIDGE_HOME }
+    if ($script:IsWindowsHost) { return $ScriptDir }
+    if ($script:IsMacHost) { return (Join-Path (Get-HomeDirectory) 'Library/Application Support/wearos-bridge') }
+    $configRoot = if (-not [string]::IsNullOrWhiteSpace($env:XDG_CONFIG_HOME)) { $env:XDG_CONFIG_HOME } else { Join-Path (Get-HomeDirectory) '.config' }
+    return (Join-Path $configRoot 'wearos-bridge')
+}
+
+$StateDir = Get-StateDirectory
+if ($StateDir -ne $ScriptDir -and -not (Test-Path -LiteralPath $StateDir -PathType Container)) {
+    New-Item -Path $StateDir -ItemType Directory -Force | Out-Null
+    if (-not $script:IsWindowsHost) {
+        # Saved watch IPs, profiles, and logs are private to the current user.
+        try { & chmod 700 $StateDir 2>$null } catch { }
+    }
+}
+$IpCachePath = Join-Path $StateDir 'ip_cache.txt'
+$ProfilesPath = Join-Path $StateDir 'watch_profiles.json'
+$ActiveProfilePath = Join-Path $StateDir 'active_profile.txt'
+$PathConfiguredPath = Join-Path $StateDir 'path_configured.txt'
+$LogsDir = Join-Path $StateDir 'watch_logs'
 $script:AdbOverride = $null
 $script:TargetOverride = $null
 $script:CommandTimeoutSeconds = 120
@@ -28,7 +59,7 @@ function Write-UiLine {
 function ConvertTo-NativeArgument {
     param([AllowEmptyString()][string]$Value)
 
-    # ProcessStartInfo on Windows PowerShell requires Windows command-line quoting.
+    # Only used on Windows PowerShell 5.1, whose ProcessStartInfo lacks ArgumentList.
     return '"' + ([regex]::Replace([regex]::Replace($Value, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1')) + '"'
 }
 
@@ -42,7 +73,12 @@ function Invoke-NativeTool {
 
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName = $Executable
-    $info.Arguments = (@($Arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        foreach ($argument in @($Arguments)) { $info.ArgumentList.Add([string]$argument) }
+    }
+    else {
+        $info.Arguments = (@($Arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+    }
     $info.UseShellExecute = $false
     $info.WorkingDirectory = (Get-Location).ProviderPath
     $info.CreateNoWindow = $true
@@ -102,7 +138,7 @@ function Assert-NativeSuccess {
 }
 
 function Get-AdbCommandPaths {
-    $matches = @(Get-Command adb.exe -All -ErrorAction SilentlyContinue)
+    $matches = @(Get-Command $script:AdbName -All -CommandType Application -ErrorAction SilentlyContinue)
     $paths = @()
 
     foreach ($match in $matches) {
@@ -127,8 +163,8 @@ function Get-AdbHealthWarning {
     if ($paths.Count -gt 1) {
         $warning.conflictDetected = $true
         $warning.paths = $paths
-        $warning.message = "Multiple adb.exe paths were detected on PATH: $($paths -join '; ')"
-        $warning.advice = "Configure WEAROS_BRIDGE_ADB to use Android Studio's SDK platform-tools\adb.exe so both tools share the same ADB version."
+        $warning.message = "Multiple $($script:AdbName) paths were detected on PATH: $($paths -join '; ')"
+        $warning.advice = "Configure WEAROS_BRIDGE_ADB to use Android Studio's SDK platform-tools$([System.IO.Path]::DirectorySeparatorChar)$($script:AdbName) so both tools share the same ADB version."
     }
 
     $Adb = Get-AdbExecutable
@@ -187,7 +223,7 @@ function Get-ConfiguredScrcpyFolder {
     }
 
     $folder = $folder.Trim().Trim('"')
-    if ((Test-Path (Join-Path $folder 'scrcpy.exe') -PathType Leaf) -and (Test-Path (Join-Path $folder 'adb.exe') -PathType Leaf)) {
+    if ((Test-Path (Join-Path $folder $script:ScrcpyName) -PathType Leaf) -and (Test-Path (Join-Path $folder $script:AdbName) -PathType Leaf)) {
         return $folder
     }
 
@@ -246,6 +282,45 @@ function Invoke-ConnectionRecovery {
     Write-UiLine 'Retrying only this target; the shared ADB server will not be restarted.' -Color Yellow
 }
 
+function Get-ExtraToolDirectories {
+    if ($script:IsWindowsHost) { return @() }
+    $homeDir = Get-HomeDirectory
+    $dirs = @()
+    foreach ($sdk in @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)) {
+        if (-not [string]::IsNullOrWhiteSpace($sdk)) { $dirs += (Join-Path $sdk 'platform-tools') }
+    }
+    if ($script:IsMacHost) {
+        $dirs += '/opt/homebrew/bin', '/usr/local/bin', (Join-Path $homeDir 'Library/Android/sdk/platform-tools')
+    }
+    else {
+        $dirs += '/usr/local/bin', '/usr/bin', '/snap/bin', '/usr/lib/android-sdk/platform-tools', (Join-Path $homeDir 'Android/Sdk/platform-tools')
+    }
+    return $dirs
+}
+
+function Find-ToolExecutable {
+    param([string]$Name)
+
+    $cmd = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) {
+        return $cmd.Source
+    }
+
+    # GUI-launched shells on macOS/Linux often have a minimal PATH, so also check common install locations.
+    $segments = @(($env:PATH -split [System.IO.Path]::PathSeparator)) + @(Get-ExtraToolDirectories)
+    foreach ($segment in $segments) {
+        if ([string]::IsNullOrWhiteSpace($segment)) {
+            continue
+        }
+        $candidate = Join-Path $segment $Name
+        if (Test-Path $candidate -PathType Leaf) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
 function Get-AdbExecutable {
     if ($script:AdbOverride) {
         return $script:AdbOverride
@@ -258,55 +333,25 @@ function Get-AdbExecutable {
     }
     $configuredFolder = Get-ConfiguredScrcpyFolder
     if ($configuredFolder) {
-        $configuredAdb = Join-Path $configuredFolder 'adb.exe'
+        $configuredAdb = Join-Path $configuredFolder $script:AdbName
         if (Test-Path $configuredAdb -PathType Leaf) {
             return $configuredAdb
         }
     }
 
-    $cmd = Get-Command adb.exe -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return $cmd.Source
-    }
-
-    foreach ($segment in ($env:PATH -split ';')) {
-        if ([string]::IsNullOrWhiteSpace($segment)) {
-            continue
-        }
-        $candidate = Join-Path $segment 'adb.exe'
-        if (Test-Path $candidate) {
-            return $candidate
-        }
-    }
-
-    return $null
+    return (Find-ToolExecutable -Name $script:AdbName)
 }
 
 function Get-ScrcpyExecutable {
     $configuredFolder = Get-ConfiguredScrcpyFolder
     if ($configuredFolder) {
-        $configuredScrcpy = Join-Path $configuredFolder 'scrcpy.exe'
+        $configuredScrcpy = Join-Path $configuredFolder $script:ScrcpyName
         if (Test-Path $configuredScrcpy -PathType Leaf) {
             return $configuredScrcpy
         }
     }
 
-    $cmd = Get-Command scrcpy.exe -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return $cmd.Source
-    }
-
-    foreach ($segment in ($env:PATH -split ';')) {
-        if ([string]::IsNullOrWhiteSpace($segment)) {
-            continue
-        }
-        $candidate = Join-Path $segment 'scrcpy.exe'
-        if (Test-Path $candidate) {
-            return $candidate
-        }
-    }
-
-    return $null
+    return (Find-ToolExecutable -Name $script:ScrcpyName)
 }
 
 function Ensure-PathConfiguredMarker {
@@ -352,14 +397,14 @@ function Set-ScrcpyPathFromFolder {
         throw "Folder not found: $candidate"
     }
 
-    $scrcpy = Join-Path $resolvedRoot 'scrcpy.exe'
-    $adb = Join-Path $resolvedRoot 'adb.exe'
+    $scrcpy = Join-Path $resolvedRoot $script:ScrcpyName
+    $adb = Join-Path $resolvedRoot $script:AdbName
     if (-not (Test-Path $scrcpy) -or -not (Test-Path $adb)) {
-        throw 'The folder does not contain both scrcpy.exe and adb.exe.'
+        throw "The folder does not contain both $($script:ScrcpyName) and $($script:AdbName)."
     }
 
     $env:SCRCPY_PATH = $resolvedRoot
-    $env:PATH = "$resolvedRoot;$($env:PATH)"
+    $env:PATH = "$resolvedRoot$([System.IO.Path]::PathSeparator)$($env:PATH)"
     Ensure-PathConfiguredMarker -Folder $resolvedRoot
     Write-UiLine "Configured scrcpy PATH from '$resolvedRoot'." -Color Green
     return $resolvedRoot
@@ -844,7 +889,7 @@ function New-DiagnosticBundle {
         [switch]$IncludeLogs,
         [bool]$RedactIdentifiers = $true,
         [System.IO.FileInfo[]]$LogFiles = @(),
-        [string]$OutputDirectory = (Join-Path $ScriptDir 'diagnostic_bundles')
+        [string]$OutputDirectory = (Join-Path $StateDir 'diagnostic_bundles')
     )
 
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -876,6 +921,7 @@ function New-DiagnosticBundle {
         }
 
         $operatingSystem = try {
+            if (-not $script:IsWindowsHost) { throw 'Not Windows.' }
             $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
             [pscustomobject]@{
                 caption = $os.Caption
@@ -886,15 +932,17 @@ function New-DiagnosticBundle {
         }
         catch {
             [pscustomobject]@{
-                caption = $env:OS
+                caption = if ($script:IsWindowsHost) { $env:OS } else { [System.Runtime.InteropServices.RuntimeInformation]::OSDescription }
                 version = [Environment]::OSVersion.Version.ToString()
                 buildNumber = ''
-                architecture = if ([Environment]::Is64BitOperatingSystem) { '64-bit' } else { '32-bit' }
+                architecture = if ($script:IsWindowsHost) { if ([Environment]::Is64BitOperatingSystem) { '64-bit' } else { '32-bit' } } else { [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() }
             }
         }
 
-        $adbPath = if ($RedactIdentifiers -and $adb -and $env:USERPROFILE) { $adb.Replace($env:USERPROFILE, '%USERPROFILE%') } else { $adb }
-        $scrcpyPath = if ($RedactIdentifiers -and $scrcpy -and $env:USERPROFILE) { $scrcpy.Replace($env:USERPROFILE, '%USERPROFILE%') } else { $scrcpy }
+        $homeDirectory = Get-HomeDirectory
+        $homeToken = if ($script:IsWindowsHost) { '%USERPROFILE%' } else { '~' }
+        $adbPath = if ($RedactIdentifiers -and $adb -and $homeDirectory) { $adb.Replace($homeDirectory, $homeToken) } else { $adb }
+        $scrcpyPath = if ($RedactIdentifiers -and $scrcpy -and $homeDirectory) { $scrcpy.Replace($homeDirectory, $homeToken) } else { $scrcpy }
         $diagnostics = [ordered]@{
             generatedUtc = [DateTime]::UtcNow.ToString('o')
             operatingSystem = $operatingSystem
@@ -915,8 +963,8 @@ function New-DiagnosticBundle {
 
         $diagnosticJson = $diagnostics | ConvertTo-Json -Depth 8
         if ($RedactIdentifiers) {
-            if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
-                $diagnosticJson = [regex]::Replace($diagnosticJson, [regex]::Escape($env:USERPROFILE), '%USERPROFILE%', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if (-not [string]::IsNullOrWhiteSpace($homeDirectory)) {
+                $diagnosticJson = [regex]::Replace($diagnosticJson, [regex]::Escape($homeDirectory), $homeToken.Replace('$', '$$'), [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
             }
             $diagnosticJson = Protect-DiagnosticText -Text $diagnosticJson
         }
@@ -1114,7 +1162,7 @@ function Invoke-Mirror {
     }
 
     if (-not $Scrcpy) {
-        throw 'scrcpy.exe is required but was not found on PATH.'
+        throw "$($script:ScrcpyName) is required but was not found on PATH."
     }
 
     $target = Get-OperationTarget
@@ -1279,7 +1327,7 @@ function New-GitHubIssueUrl {
         [string]$AdditionalContext = ''
     )
 
-    $baseUrl = 'https://github.com/aegorsuch/wearos-windows-bridge/issues/new'
+    $baseUrl = 'https://github.com/aegorsuch/wearos-bridge/issues/new'
     $cache = Load-IpCache
     $profile = Get-CurrentProfile
     $adb = Get-AdbExecutable
@@ -1367,11 +1415,25 @@ function Open-IssueReporter {
 
     Write-UiLine "Opening the bug report form for the $selectedStep step..." -Color Green
     try {
-        Start-Process $url
+        if ($script:IsWindowsHost) {
+            Start-Process $url
+        }
+        else {
+            $opener = if ($script:IsMacHost) { 'open' } else { 'xdg-open' }
+            $openResult = Invoke-NativeTool -Executable $opener -Arguments @($url) -TimeoutSeconds 15
+            Assert-NativeSuccess $openResult 'Opening the browser'
+        }
     }
     catch {
         Write-UiLine "Open this link manually in your browser: $url" -Color Yellow
     }
+}
+
+function Get-PairingScreenNote {
+    return @(
+        'Use the IP address and pairing port from the "Pair new device" screen on the watch.',
+        'Do not use the connection IP:port on the main Wireless Debugging screen: the IP is usually the same, but that screen''s port is the connection port, which differs from the pairing port. Enter the connection port when connecting (step 3).'
+    )
 }
 
 function Get-PairInputError {
@@ -1399,7 +1461,7 @@ function Get-PairInputError {
 }
 
 function Show-Help {
-    Write-UiLine 'WearOS Windows Bridge command-line options' -Color Cyan
+    Write-UiLine 'WearOS Bridge command-line options' -Color Cyan
     Write-UiLine '---------------------------------------------------' -Color DarkCyan
     Write-UiLine 'Profile management (optional):'
     Write-UiLine '  Most users can ignore profiles entirely and just use the default setup.'
@@ -1436,7 +1498,7 @@ function Show-AutomationHelp {
     Write-UiLine '  --recover-adb (explicitly restarts the shared server; interrupts Studio)'
     Write-UiLine 'Modifiers (after the command; order-independent):'
     Write-UiLine '  --serial SERIAL or --profile NAME: target this call without changing saved settings'
-    Write-UiLine '  --adb PATH: select SDK adb.exe; alternatively set WEAROS_BRIDGE_ADB'
+    Write-UiLine "  --adb PATH: select SDK $($script:AdbName); alternatively set WEAROS_BRIDGE_ADB"
     Write-UiLine '  --non-interactive: never prompt; reject unsupported interactive commands'
     Write-UiLine '  --json: one JSON result on stdout, including errors; implies noninteractive'
     Write-UiLine '  --timeout SECONDS: native-command timeout, 1-3600 (default 120)'
@@ -1875,6 +1937,7 @@ function Show-DevMenu {
                 Read-Host 'Press Enter to continue'
             }
             '5' {
+                foreach ($note in Get-PairingScreenNote) { Write-UiLine $note -Color Yellow }
                 $ip = Read-Host 'Watch IP'
                 $pairPort = Read-Host 'Pairing port'
                 $pairCode = Read-Host 'Pairing code'
@@ -1936,7 +1999,7 @@ function Show-Menu {
 
         Write-Host ''
         Write-Host '===================================================' -ForegroundColor DarkGreen
-        Write-Host '             WEAROS WINDOWS BRIDGE' -ForegroundColor Green
+        Write-Host '                 WEAROS BRIDGE' -ForegroundColor Green
         Write-Host '===================================================' -ForegroundColor DarkGreen
         Write-Host "  Scrcpy System Path: $(if ($Scrcpy) { 'Configured' } else { 'Not configured' })"
         if ($paired) {
@@ -1978,11 +2041,25 @@ function Show-Menu {
 
         switch ($choice) {
             '1' {
-                Write-UiLine 'scrcpy is the open-source screen-mirroring tool used to display a Wear OS watch on Windows.' -Color Cyan
-                Write-UiLine 'Open this clickable link in your browser (Ctrl+click if required by your terminal): https://github.com/Genymobile/scrcpy/releases' -Color Cyan
-                Write-UiLine 'Download the latest scrcpy-win64 zip and extract it.' -Color Cyan
-                Write-UiLine 'Choose the extracted folder containing both scrcpy.exe and adb.exe.' -Color Cyan
-                Write-UiLine 'This only configures the current bridge session; it does not change your permanent Windows PATH.' -Color Cyan
+                $platformName = if ($script:IsWindowsHost) { 'Windows' } elseif ($script:IsMacHost) { 'macOS' } else { 'Linux' }
+                Write-UiLine "scrcpy is the open-source screen-mirroring tool used to display a Wear OS watch on $platformName." -Color Cyan
+                if ($script:IsWindowsHost) {
+                    Write-UiLine 'Open this clickable link in your browser (Ctrl+click if required by your terminal): https://github.com/Genymobile/scrcpy/releases' -Color Cyan
+                    Write-UiLine 'Download the latest scrcpy-win64 zip and extract it.' -Color Cyan
+                    Write-UiLine "Choose the extracted folder containing both $($script:ScrcpyName) and $($script:AdbName)." -Color Cyan
+                    Write-UiLine 'This only configures the current bridge session; it does not change your permanent Windows PATH.' -Color Cyan
+                }
+                else {
+                    if ($script:IsMacHost) {
+                        Write-UiLine 'Install with Homebrew: brew install scrcpy android-platform-tools' -Color Cyan
+                    }
+                    else {
+                        Write-UiLine 'Install with your package manager, for example on Ubuntu: sudo apt install scrcpy adb' -Color Cyan
+                    }
+                    Write-UiLine 'If scrcpy and adb are on PATH they are detected automatically and nothing else is needed.' -Color Cyan
+                    Write-UiLine "Otherwise (for example the official scrcpy release archive), choose a folder containing both $($script:ScrcpyName) and $($script:AdbName)." -Color Cyan
+                    Write-UiLine 'The chosen folder is remembered by the bridge; it does not change your shell PATH.' -Color Cyan
+                }
                 $folder = Read-Host 'Enter or click and drag the extracted scrcpy folder here (press Enter to cancel)'
                 if ([string]::IsNullOrWhiteSpace($folder)) {
                     Write-UiLine 'No folder entered; setup canceled. Returning to the menu.' -Color Yellow
@@ -1996,6 +2073,7 @@ function Show-Menu {
                 }
             }
             '2' {
+                foreach ($note in Get-PairingScreenNote) { Write-UiLine $note -Color Yellow }
                 $pairCode = Read-Host 'Enter 6-digit Pairing Code (example: 952775)'
                 $ip = Read-Host 'Enter Watch IP Address only (example: 192.168.1.33; do not include the port)'
                 $pairPort = Read-Host 'Enter Pairing Port only (example: 41131; numbers only)'
@@ -2255,6 +2333,7 @@ function Main {
             }
         }
         '--pair-connect-mirror' {
+            if ($ScriptArgs.Count -lt 5) { foreach ($note in Get-PairingScreenNote) { Write-UiLine $note -Color Yellow } }
             $ip = if ($ScriptArgs.Count -gt 1) { $ScriptArgs[1] } else { Read-Host 'Watch IP address' }
             $pairPort = if ($ScriptArgs.Count -gt 2) { $ScriptArgs[2] } else { Read-Host 'Pairing port' }
             $pairCode = if ($ScriptArgs.Count -gt 3) { $ScriptArgs[3] } else { Read-Host 'Pairing code' }

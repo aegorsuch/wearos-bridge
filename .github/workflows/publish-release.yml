@@ -1,23 +1,33 @@
 name: Publish release
 
 on:
+  pull_request:
   push:
     branches:
       - develop
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: publish-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    runs-on: windows-latest
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Isolate bridge state
+        shell: pwsh
+        run: '"WEAROS_BRIDGE_HOME=$env:RUNNER_TEMP/wearos-bridge-state" | Out-File -FilePath $env:GITHUB_ENV -Append'
 
       - name: Validate PowerShell syntax
         shell: pwsh
@@ -25,7 +35,7 @@ jobs:
           $tokens = $null
           $parseErrors = $null
           [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $PWD 'wearos-windows-bridge.ps1'),
+            (Join-Path $PWD 'wearos-bridge.ps1'),
             [ref]$tokens,
             [ref]$parseErrors
           ) | Out-Null
@@ -34,39 +44,78 @@ jobs:
             throw 'PowerShell syntax validation failed.'
           }
 
+      - name: Validate launcher
+        if: runner.os != 'Windows'
+        run: sh -n wearos-bridge.sh
+
       - name: Install Pester
         shell: pwsh
         run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
 
-      - name: Run tests
+      - name: Run tests (PowerShell 7)
         shell: pwsh
         run: |
           Import-Module Pester -RequiredVersion 5.7.1
           Invoke-Pester -Path ./tests -CI
 
-      - name: Package release ZIP
-        id: package
-        shell: pwsh
+      # The Windows .bat launcher runs Windows PowerShell 5.1, so test it too.
+      - name: Run tests (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
         run: |
-          $staging = Join-Path $env:RUNNER_TEMP 'wearos-windows-bridge-release'
-          New-Item -Path $staging -ItemType Directory -Force | Out-Null
-          Copy-Item README.md, wearos-windows-bridge.bat, wearos-windows-bridge.ps1 -Destination $staging
+          Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
+          Import-Module Pester -RequiredVersion 5.7.1
+          Invoke-Pester -Path ./tests -CI
 
-          $archive = Join-Path $env:RUNNER_TEMP 'wearos-windows-bridge.zip'
-          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $archive -Force
+  publish:
+    name: Publish release
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
 
-          $shortSha = $env:GITHUB_SHA.Substring(0, 12)
-          "archive=$archive" >> $env:GITHUB_OUTPUT
-          "tag=build-$shortSha" >> $env:GITHUB_OUTPUT
-          "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
+      - name: Package release archives
+        id: package
+        run: |
+          out="$RUNNER_TEMP/dist"
+          mkdir -p "$out" "$RUNNER_TEMP/stage"
+
+          win="$RUNNER_TEMP/stage/wearos-bridge-windows"
+          mkdir -p "$win"
+          cp README.md wearos-bridge.bat wearos-bridge.ps1 "$win/"
+          (cd "$RUNNER_TEMP/stage" && zip -qr "$out/wearos-bridge-windows.zip" wearos-bridge-windows)
+
+          for platform in macos linux; do
+            dir="$RUNNER_TEMP/stage/wearos-bridge-$platform"
+            mkdir -p "$dir"
+            cp README.md wearos-bridge.sh wearos-bridge.ps1 "$dir/"
+            chmod +x "$dir/wearos-bridge.sh"
+            tar -C "$RUNNER_TEMP/stage" -czf "$out/wearos-bridge-$platform.tar.gz" "wearos-bridge-$platform"
+          done
+
+          short_sha="${GITHUB_SHA:0:12}"
+          echo "dist=$out" >> "$GITHUB_OUTPUT"
+          echo "tag=build-$short_sha" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.package.outputs.tag }}
-          name: Wear OS Windows Bridge ${{ steps.package.outputs.short_sha }}
-          body: Automated package from commit ${{ github.sha }}.
-          files: ${{ steps.package.outputs.archive }}
+          name: WearOS Bridge ${{ steps.package.outputs.short_sha }}
+          body: |
+            Automated package from commit ${{ github.sha }}.
+
+            Downloads: `wearos-bridge-windows.zip`, `wearos-bridge-macos.tar.gz`, `wearos-bridge-linux.tar.gz`.
+            Automated tests run on Windows, Ubuntu, and macOS runners with fixture ADB; no physical watch is used in CI.
+          files: |
+            ${{ steps.package.outputs.dist }}/wearos-bridge-windows.zip
+            ${{ steps.package.outputs.dist }}/wearos-bridge-macos.tar.gz
+            ${{ steps.package.outputs.dist }}/wearos-bridge-linux.tar.gz
           make_latest: true
           overwrite_files: true
           fail_on_unmatched_files: true
