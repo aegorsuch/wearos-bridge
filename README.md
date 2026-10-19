@@ -2,7 +2,7 @@
 
 A cross-platform (Windows, macOS, Ubuntu/Linux) command-line helper for pairing a Wear OS watch over Wi-Fi, connecting with Android Debug Bridge (ADB), mirroring the watch with scrcpy, and sideloading APK files.
 
-Repository: https://git.tak.gov/aegorsuch/wearos-windows-bridge
+Repository: https://git.tak.gov/aegorsuch/wearos-bridge
 
 ## Project Information
 
