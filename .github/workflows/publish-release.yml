@@ -25,6 +25,14 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test release retention
+        run: node --test tests/release-retention.test.cjs
+
       - name: Isolate bridge state
         shell: pwsh
         run: '"WEAROS_BRIDGE_HOME=$env:RUNNER_TEMP/wearos-bridge-state" | Out-File -FilePath $env:GITHUB_ENV -Append'
@@ -121,3 +129,12 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retain only the newest complete stable release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ steps.package.outputs.tag }}
+        with:
+          script: |
+            const prune = require('./.github/scripts/prune-releases.cjs');
+            await prune({ github, context, core, tag: process.env.RELEASE_TAG });
