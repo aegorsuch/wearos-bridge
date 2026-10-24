@@ -66,7 +66,7 @@ Each commit pushed to the `main` branch automatically runs the tests on Windows,
 
 After successful publication, automation verifies that all three release assets are uploaded and nonempty, then removes older published stable releases. Only the newest published stable release is retained; drafts, prereleases, and git tags/source history are not deleted. Failed or superseded publications do not trigger cleanup.
 
-The canonical Forge repository is https://git.tak.gov/aegorsuch/wearos-bridge. GitHub release publication does not synchronize Forge branches. Until a CI credential is configured for Forge, update it explicitly with a non-force, fast-forward push of GitHub `develop`; a divergent Forge branch must be reconciled before pushing.
+The canonical Forge repository is https://git.tak.gov/aegorsuch/wearos-bridge. Integrate changes into Forge `main` first, then mirror the exact resulting commit to GitHub `main` with a non-force, fast-forward push. GitHub release publication does not synchronize source branches; continuous mirroring is not configured. Reconcile divergent history before pushing rather than overwriting either host.
 
 ## Requirements
 
