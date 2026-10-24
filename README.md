@@ -62,7 +62,7 @@ tar -xzf wearos-bridge-linux.tar.gz && cd wearos-bridge-linux
 
 On macOS/Linux, scrcpy and adb are detected automatically from `PATH`, `ANDROID_HOME`/`ANDROID_SDK_ROOT`, Homebrew, snap, and common Android SDK locations, so menu option 1 is only needed for a scrcpy folder that is not installed through a package manager. If the script is not executable, run `chmod +x wearos-bridge.sh`. You may also run `pwsh ./wearos-bridge.ps1` directly.
 
-Each commit pushed to the `develop` branch automatically runs the tests on Windows, Ubuntu, and macOS runners and then publishes a release with all three archives. CI uses fixture ADB only; macOS and Linux have not been verified against a physical watch.
+Each commit pushed to the `main` branch automatically runs the tests on Windows, Ubuntu, and macOS runners and then publishes a release with all three archives. CI uses fixture ADB only; macOS and Linux have not been verified against a physical watch.
 
 After successful publication, automation verifies that all three release assets are uploaded and nonempty, then removes older published stable releases. Only the newest published stable release is retained; drafts, prereleases, and git tags/source history are not deleted. Failed or superseded publications do not trigger cleanup.
 
