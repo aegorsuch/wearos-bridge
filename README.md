@@ -56,7 +56,7 @@ The release workflow in [publish-release.yml](.github/workflows/publish-release.
 
 ### Packaging and publication
 
-The workflow packages `README.md`, `wearos-bridge.ps1`, and the appropriate platform launcher into the three archives listed in [Quick Start](#quick-start).
+The workflow packages `README.md`, `LICENSE`, `wearos-bridge.ps1`, and the appropriate platform launcher into the three archives listed in [Quick Start](#quick-start).
 
 After successful publication, automation verifies that all three release assets are uploaded and nonempty, then removes older published stable releases. Only the newest published stable release is retained; drafts, prereleases, and git tags/source history are not deleted. Failed or superseded publications do not trigger cleanup.
 
@@ -434,7 +434,9 @@ Some watch apps require pressing their own Done, Enter, or checkmark control to 
 
 ## License
 
-No license file or explicit software license is present in this repository at the canonical base used for this reformat. Licensing terms beyond the existing rights statement below are unspecified; this README reformat does not grant or change a license.
+The repository owner's original code is licensed under the GNU General Public License, version 3 or (at your option) any later version (`GPL-3.0-or-later`). See [LICENSE](LICENSE) for the complete license text.
+
+This grant covers only the repository owner's original code. Third-party components, including external tools and dependencies, retain their own licenses and notices; this declaration does not relicense them. The existing rights grant below remains unchanged.
 
 ### Rights
 
