@@ -1,28 +1,70 @@
 # WearOS Bridge
 
+## Purpose and Capabilities
+
 A cross-platform (Windows, macOS, Ubuntu/Linux) command-line helper for pairing a Wear OS watch over Wi-Fi, connecting with Android Debug Bridge (ADB), mirroring the watch with scrcpy, and sideloading APK files.
 
 Repository: https://git.tak.gov/aegorsuch/wearos-bridge
 
-## Project Information
-
-### Rights
-
-Unlimited Rights granted to TAK Product Center.
-
-### Point of Contact
-
-Alex Gorsuch on chat.tak.gov or Signal.
+<a id="project-information"></a>
 
 ### Repositories
 
 TAK Forge is the canonical repository. GitHub is a secondary repository.
 
+## Status
+
+Each commit pushed to the `main` branch automatically runs the tests on Windows, Ubuntu, and macOS runners and then publishes a release with all three archives. CI uses fixture ADB only; macOS and Linux have not been verified against a physical watch.
+
+## Point of Contacts
+
+### Point of Contact
+
+Alex Gorsuch on chat.tak.gov or Signal.
+
 ### Report a Bug
 
 If the helper fails, crashes, or behaves unexpectedly, open a GitHub issue at https://github.com/aegorsuch/wearos-bridge/issues and include your operating system, the stage of the flow that failed, the exact error text, and the watch model or device state when possible. The tool's menu also includes a bug-report option to open a prefilled issue form.
 
-## Quick Start
+## Ports Required
+
+Wireless ADB pairing and connection use separate watch-provided ports. Use the pairing port from **Pair new device** and the connection port from the main **Wireless Debugging** screen; the connection port can change when Wireless Debugging restarts. The bridge passes these endpoints to ADB rather than assigning fixed watch ports. See [Pair the Watch](#pair-the-watch) and [Connect to the Watch](#connect-to-the-watch).
+
+WearTAK / Tracker preset server entries default to port `8089` when omitted; this is an app server setting, not a bridge listener. Uploading a preset does not establish or verify that TAK connection. See [WearTAK / WearTAK Tracker presets](#weartak--weartak-tracker-presets).
+
+## Equipment Required
+
+### Requirements
+
+- A Wear OS watch and the computer on the same network, with Wireless Debugging enabled on the watch
+- scrcpy and ADB: a scrcpy release containing both `scrcpy.exe` and `adb.exe` on Windows; `scrcpy` and `adb` from your package manager (or SDK platform-tools) on macOS/Linux
+- Windows 10 or later: Windows PowerShell 5.1, included with Windows
+- macOS or Ubuntu/Linux: PowerShell 7+ (`pwsh`)
+- On Linux, a desktop session for scrcpy's window, and `xdg-open` for the bug-report link (optional; the link is printed if it cannot open)
+
+## Equipment Supported
+
+Host platforms: Windows 10+, macOS, and Ubuntu/Linux with the dependencies above. The primary target is a Wear OS watch with Wireless Debugging. Automation also accepts explicit ADB serials for USB devices, emulators, and wireless endpoints; see [Commands and modifiers](#commands-and-modifiers). A verified watch-model compatibility list is not documented in this repository. macOS/Linux physical-watch validation remains unverified as noted in [Status](#status).
+
+## Compilation
+
+The bridge consists of PowerShell scripts and platform launchers; no compilation step is required to run it. The bridge does not build APKs: build the target app separately before sideloading.
+
+### Testing
+
+The release workflow in [publish-release.yml](.github/workflows/publish-release.yml) runs Node.js release-retention tests, PowerShell syntax checks, non-Windows shell-launcher syntax checks, and Pester tests. Pester 5.7.1 is used on PowerShell 7 for all three host platforms and additionally on Windows PowerShell 5.1. Tests are in [tests](tests).
+
+### Packaging and publication
+
+The workflow packages `README.md`, `wearos-bridge.ps1`, and the appropriate platform launcher into the three archives listed in [Quick Start](#quick-start).
+
+After successful publication, automation verifies that all three release assets are uploaded and nonempty, then removes older published stable releases. Only the newest published stable release is retained; drafts, prereleases, and git tags/source history are not deleted. Failed or superseded publications do not trigger cleanup.
+
+The canonical Forge repository is https://git.tak.gov/aegorsuch/wearos-bridge. Integrate changes into Forge `main` first, then mirror the exact resulting commit to GitHub `main` with a non-force, fast-forward push. GitHub release publication does not synchronize source branches; continuous mirroring is not configured. Reconcile divergent history before pushing rather than overwriting either host.
+
+## Developer Notes
+
+### Quick Start
 
 Download the archive for your platform from the [latest release](https://github.com/aegorsuch/wearos-bridge/releases/latest):
 
@@ -62,21 +104,7 @@ tar -xzf wearos-bridge-linux.tar.gz && cd wearos-bridge-linux
 
 On macOS/Linux, scrcpy and adb are detected automatically from `PATH`, `ANDROID_HOME`/`ANDROID_SDK_ROOT`, Homebrew, snap, and common Android SDK locations, so menu option 1 is only needed for a scrcpy folder that is not installed through a package manager. If the script is not executable, run `chmod +x wearos-bridge.sh`. You may also run `pwsh ./wearos-bridge.ps1` directly.
 
-Each commit pushed to the `main` branch automatically runs the tests on Windows, Ubuntu, and macOS runners and then publishes a release with all three archives. CI uses fixture ADB only; macOS and Linux have not been verified against a physical watch.
-
-After successful publication, automation verifies that all three release assets are uploaded and nonempty, then removes older published stable releases. Only the newest published stable release is retained; drafts, prereleases, and git tags/source history are not deleted. Failed or superseded publications do not trigger cleanup.
-
-The canonical Forge repository is https://git.tak.gov/aegorsuch/wearos-bridge. Integrate changes into Forge `main` first, then mirror the exact resulting commit to GitHub `main` with a non-force, fast-forward push. GitHub release publication does not synchronize source branches; continuous mirroring is not configured. Reconcile divergent history before pushing rather than overwriting either host.
-
-## Requirements
-
-- A Wear OS watch and the computer on the same network, with Wireless Debugging enabled on the watch
-- scrcpy and ADB: a scrcpy release containing both `scrcpy.exe` and `adb.exe` on Windows; `scrcpy` and `adb` from your package manager (or SDK platform-tools) on macOS/Linux
-- Windows 10 or later: Windows PowerShell 5.1, included with Windows
-- macOS or Ubuntu/Linux: PowerShell 7+ (`pwsh`)
-- On Linux, a desktop session for scrcpy's window, and `xdg-open` for the bug-report link (optional; the link is printed if it cannot open)
-
-## Getting Started
+### Getting Started
 
 A `.bat` file is a small script that Windows runs like a program. To use this helper on Windows:
 
@@ -88,14 +116,14 @@ A `.bat` file is a small script that Windows runs like a program. To use this he
 
 On macOS/Linux run `./wearos-bridge.sh` instead; everything after launch works the same.
 
-## First Run
+### First Run
 
 1. Windows: click the [scrcpy releases link](https://github.com/Genymobile/scrcpy/releases), download the latest `scrcpy-win64` zip, and extract it. scrcpy mirrors your watch screen and includes `adb.exe`, which the helper uses to connect to the watch and install APKs. macOS/Linux: install scrcpy and adb as shown in Quick Start.
 2. Run the launcher and, on Windows, select **1. Setup scrcpy System Path**.
 3. Drag the extracted folder containing `scrcpy.exe` and `adb.exe` into the window, or enter its path. The helper remembers this folder for future launches but does not change your permanent PATH.
 4. If you move or rename the scrcpy folder later, run setup again and choose its new location.
 
-## Enable Developer Options and Wireless Debugging
+### Enable Developer Options and Wireless Debugging
 
 Before pairing, enable the required settings on the watch:
 
@@ -107,7 +135,7 @@ Before pairing, enable the required settings on the watch:
 6. Open **Wireless Debugging** and turn it on.
 7. Make sure the watch is connected to a Wi-Fi network.
 
-## Pair the Watch
+### Pair the Watch
 
 On the watch:
 
@@ -124,7 +152,7 @@ In the helper, select **2. Pair Watch via Wi-Fi** and enter those values when pr
 
 Pairing and connection use different ports. The pairing port is shown after selecting **Pair new device**. The connection port is shown on the main **Wireless Debugging** screen. The IP address is usually the same on both screens, but for step 2 always use the IP and pairing port from the **Pair new device** screen, not the connection IP:port on the main screen. The helper repeats this reminder at the pairing prompts.
 
-## Connect to the Watch
+### Connect to the Watch
 
 1. Return to the main **Wireless Debugging** screen on the watch.
 2. In the helper, select **3. Connect to Watch**.
@@ -134,17 +162,17 @@ The helper saves the IP address and ports in `ip_cache.txt` and in the active pr
 
 The bridge reuses an already authorized connection, starts ADB when connecting if needed, and retries unsuccessful connections without restarting the shared server. The menu reports pairing from saved settings and connection from the live ADB device list, so a saved pairing can remain even when the watch is offline. A connected watch must be in the authorized `device` state at the exact saved endpoint.
 
-## Screen Mirroring
+### Screen Mirroring
 
 After connecting, select **4. Launch Screen Mirroring**. The helper reuses the saved `IP:connection-port` if it is already connected, otherwise attempts to connect, and passes that endpoint to scrcpy. scrcpy uses the same ADB executable as the bridge.
 
-## Sideload an APK
+### Sideload an APK
 
 After connecting, select **5. Sideload an APK File**, then enter the APK file path or click and drag the APK file into the window, and press Enter. The bridge checks the connection, displays install progress, and reports ADB's install result. The APK is installed on the selected watch with replacement and runtime permissions enabled.
 
 The install uses the saved direct ADB connection and disables streamed installation for better reliability over wireless debugging. If the watch disconnects during installation, wake it, enable Wireless Debugging, reconnect, and retry if ADB did not report `Success`.
 
-## View Live Watch Logs
+### View Live Watch Logs
 
 After connecting, select **6. Live Watch Logs** to stream new log lines immediately to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs. The tool will display a message when capture is running. Keywords may contain letters, numbers, periods, underscores, and hyphens, such as `weartak` or `takserver.aftakcoe.org`.
 
@@ -162,7 +190,7 @@ The log is written directly to the `watch_logs` folder as it streams, using a te
 
 The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Review captures there (see Local Files for its location). Share a log only after checking it for sensitive information.
 
-## Local Files
+### Local Files
 
 On Windows the helper creates these local files beside the batch file. On macOS and Linux they are stored in a per-user directory instead (`~/Library/Application Support/wearos-bridge` on macOS, `$XDG_CONFIG_HOME/wearos-bridge` or `~/.config/wearos-bridge` on Linux), created readable only by you. Set `WEAROS_BRIDGE_HOME` on any platform to choose a different folder.
 
@@ -174,11 +202,11 @@ On Windows the helper creates these local files beside the batch file. On macOS 
 
 The six-digit pairing code is used only during pairing and is not saved.
 
-## PowerShell core, profiles, and automation
+### PowerShell core, profiles, and automation
 
 The helper now ships with a PowerShell-based core and a small batch launcher for compatibility. This gives the project target-specific connection retries, structured status output, and profile support for multiple watches.
 
-### Multi-watch profiles
+#### Multi-watch profiles
 
 Profiles are optional. If you only use one Wear OS watch, you can ignore them and keep using the default setup. The profile system is mainly a convenience for multi-watch setups, where each watch keeps its own saved IP, pairing port, and connection port.
 
@@ -192,7 +220,7 @@ If you do want to manage profiles, either use the menu flow or the command-line 
 
 The `default` profile cannot be deleted, but you can create and switch to other names like `ODIN-WEARTAK` or `ODIN-WEARTAK-4` for separate devices. For a quick menu-based removal, enter `DELETE NAME` in the profile management prompt.
 
-### Developer Tools
+#### Developer Tools
 
 Developer Tools is always available as **7. Developer Tools** on the main menu. It contains:
 
@@ -206,19 +234,19 @@ Profiles are optional. For more than one watch, create a profile for each device
 
 The bulk sideload action targets every ADB device currently in the authorized `device` state. Check the listed devices before using it if more than one watch or Android device is connected.
 
-### Structured status output
+#### Structured status output
 
 The PowerShell script exposes `--status-json` for scripts or automation. It returns installation/configuration flags, saved pairing and connection state, the active profile, profile settings, and the current ADB device summary as JSON.
 
-### Shared ADB and connection retries
+#### Shared ADB and connection retries
 
 Menu and CLI operations reuse healthy connections. Failed connection or pairing attempts do not kill the shared ADB server or other ADB processes, so Android Studio's debugger and Logcat can remain attached. The connection port shown in Wireless Debugging can change, so update it when reconnecting if needed. `--recover-adb` is an explicit, opt-in server restart; it interrupts all ADB clients and should not be part of routine automation.
 
-### One-click pair + connect + mirror
+#### One-click pair + connect + mirror
 
 Use **7. Developer Tools > 5. Pair + Connect + Mirror** for the guided flow, or run `wearos-bridge.bat --pair-connect-mirror` (`./wearos-bridge.sh --pair-connect-mirror` on macOS/Linux) for the command-line flow. The command prompts for any values not supplied as arguments.
 
-## Android Studio / Automation
+### Android Studio / Automation
 
 Use the normal menu for manual setup, pairing, and troubleshooting. Scripts and agents should invoke direct commands, not navigate a special menu. Both interfaces use the same installation, connection, and mirroring functions.
 
@@ -237,7 +265,7 @@ wearos-bridge.bat --upload-preset weartak "C:\WatchPresets\odin.json" odin-weart
 ./wearos-bridge.sh --install ~/project/app/build/outputs/apk/debug/app-debug.apk --profile DEV --non-interactive --json
 ```
 
-### Commands and modifiers
+#### Commands and modifiers
 
 | Command | Arguments | Behavior |
 |---|---|---|
@@ -270,7 +298,7 @@ Relative input/output paths are resolved from the caller's working directory. Co
 
 `--mirror` without automation modifiers retains its unlimited interactive lifetime. With automation modifiers it runs in the foreground with the native-command timeout; set `--timeout 3600` for a longer viewing session. It does not return a background PID.
 
-### Share Android Studio's ADB
+#### Share Android Studio's ADB
 
 Select the same SDK ADB used by Studio to avoid competing bundled ADB versions:
 
@@ -280,7 +308,7 @@ wearos-bridge.bat --install "C:\project\app-debug.apk" --profile DEV --adb "C:\U
 
 For a persistent selection, set the Windows user environment variable `WEAROS_BRIDGE_ADB` to the full SDK ADB path and restart Studio/the bridge to pick it up. Selection order is `--adb`, `WEAROS_BRIDGE_ADB`, configured scrcpy folder, then PATH. An invalid explicit selection fails rather than silently falling back. scrcpy receives this same executable through its `ADB` environment variable.
 
-### WearTAK / WearTAK Tracker presets
+#### WearTAK / WearTAK Tracker presets
 
 Use **7. Developer Tools > 8. Upload WearTAK / Tracker preset**, or:
 
@@ -338,7 +366,7 @@ With `--json`, `data` includes `app`, `package`, `name`, `remotePath`, `uploaded
 
 Presets contain **plaintext credentials**. Keep real files outside repositories and shared folders; protect both the PC and watch copies. A local `presets/` folder beside the bridge is Git-ignored as a convenience, not encrypted storage. File contents and credentials are not printed by this command; raw native upload diagnostics and JSON parser errors are withheld to prevent accidental disclosure. A temporary local read-back copy is deleted after verification.
 
-### Result contract for scripts and agents
+#### Result contract for scripts and agents
 
 Exit code **0** means the operation succeeded; **1** means invalid arguments, timeout, or operation failure. An install requires both a zero ADB exit code and an explicit `Success` result. Bulk installations continue through all targets, then fail overall if any target failed.
 
@@ -362,7 +390,7 @@ On failure, `success` is `false` and `error` contains the reason. `serial` is nu
 
 Agents should discover commands using `--automation-help`, use `--json` and an explicit target for device actions, check both exit code and `success`, and never invoke server recovery automatically.
 
-### Android Studio External Tools
+#### Android Studio External Tools
 
 In **Settings > Tools > External Tools**, add an install tool:
 
@@ -378,28 +406,36 @@ For a screenshot tool, use the same program/working directory and these argument
 /d /c ""C:\tools\wearos-bridge\wearos-bridge.bat" --screenshot "$ProjectFileDir$\watch.png" --profile DEV --json"
 ```
 
-## Troubleshooting
+### Troubleshooting
 
-### More than one ADB device
+#### More than one ADB device
 
 Reconnect through option 3. Mirroring and APK installation use the saved direct `IP:port` connection to select the correct watch.
 
-### Pairing fails
+#### Pairing fails
 
 Confirm that Wireless Debugging and **Pair new device** are open on the watch, then verify the pairing port and six-digit Wi-Fi pairing code.
 
-### Connection fails
+#### Connection fails
 
 Use the port from the main Wireless Debugging screen, not the pairing port. Enter the current IP address and connection port in **3. Connect to Watch**. The connection port can change when Wireless Debugging restarts. Confirm the PC and watch are on the same network and keep the watch awake while connecting or installing.
 
-### Watch shows "unauthorized"
+#### Watch shows "unauthorized"
 
 If ADB reports the watch as `unauthorized`, confirm the **Allow debugging?** prompt on the watch, then connect again.
 
-### "adb server is out of date" or devices behave inconsistently
+#### "adb server is out of date" or devices behave inconsistently
 
 Different bundled ADB versions can conflict on the same server port. Configure `WEAROS_BRIDGE_ADB` or `--adb` to use Studio's SDK executable, so the bridge and scrcpy use the same version. If pairing fails with a protocol-fault error, reopen **Pair new device** on the watch for a fresh code and port and retry. Only if the shared server really needs restarting, invoke `wearos-bridge.bat --recover-adb` (or `./wearos-bridge.sh --recover-adb`), understanding that this interrupts Studio's debugger, Logcat, and other ADB clients.
 
-### Text entry through scrcpy does not save
+#### Text entry through scrcpy does not save
 
 Some watch apps require pressing their own Done, Enter, or checkmark control to commit text. If text works when entered directly on the watch but not through scrcpy, the behavior is likely specific to the app's text-field handling.
+
+## License
+
+No license file or explicit software license is present in this repository at the canonical base used for this reformat. Licensing terms beyond the existing rights statement below are unspecified; this README reformat does not grant or change a license.
+
+### Rights
+
+Unlimited Rights granted to TAK Product Center.
