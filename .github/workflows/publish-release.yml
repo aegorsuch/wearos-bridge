@@ -94,13 +94,13 @@ jobs:
 
           win="$RUNNER_TEMP/stage/wearos-bridge-windows"
           mkdir -p "$win"
-          cp README.md wearos-bridge.bat wearos-bridge.ps1 "$win/"
+          cp README.md LICENSE wearos-bridge.bat wearos-bridge.ps1 "$win/"
           (cd "$RUNNER_TEMP/stage" && zip -qr "$out/wearos-bridge-windows.zip" wearos-bridge-windows)
 
           for platform in macos linux; do
             dir="$RUNNER_TEMP/stage/wearos-bridge-$platform"
             mkdir -p "$dir"
-            cp README.md wearos-bridge.sh wearos-bridge.ps1 "$dir/"
+            cp README.md LICENSE wearos-bridge.sh wearos-bridge.ps1 "$dir/"
             chmod +x "$dir/wearos-bridge.sh"
             tar -C "$RUNNER_TEMP/stage" -czf "$out/wearos-bridge-$platform.tar.gz" "wearos-bridge-$platform"
           done
